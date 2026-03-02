@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cerulean Labs — Space Debris Risk Tracker</title>
+<meta name="description" content="Interactive 3D visualization of 12,000+ tracked space debris objects with risk scoring methodology. Built by Cerulean Labs.">
+<meta property="og:title" content="Cerulean Labs — Space Debris Risk Tracker">
+<meta property="og:description" content="Interactive 3D globe showing 12,000+ tracked space debris with risk classification. Filter by country, altitude, size, and risk level.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#06b6d4">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230e7490'/><text x='16' y='23' font-size='20' font-weight='800' text-anchor='middle' fill='white'>C</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/globe.gl@2.33.0/dist/globe.gl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg-primary:#0a0e17;--bg-secondary:#111827;--bg-card:#1a2235;--bg-card-hover:#1f2a40;
+  --border:#2a3550;--text-primary:#e2e8f0;--text-secondary:#94a3b8;--text-muted:#64748b;
+  --accent:#06b6d4;--accent-dim:#0e7490;
+  --critical:#ef4444;--high:#f97316;--moderate:#eab308;--low:#22c55e;
+  --sidebar-w:360px;
+}
+body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:var(--bg-primary);color:var(--text-primary);overflow:hidden;height:100vh}
+
+/* Header */
+#header{position:fixed;top:0;left:0;right:0;height:52px;background:rgba(10,14,23,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:100}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{width:30px;height:30px;background:linear-gradient(135deg,var(--accent),#3b82f6);border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff}
+.logo-text{font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+.logo-sub{font-size:10px;color:var(--text-muted);font-weight:400;letter-spacing:.5px}
+.header-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-size:11px;transition:all .2s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.btn:hover{background:var(--bg-card-hover);color:var(--text-primary);border-color:var(--accent-dim)}
+.btn-accent{background:var(--accent-dim);border-color:var(--accent);color:#fff}
+.btn-accent:hover{background:var(--accent)}
+#status-badge{padding:3px 10px;border-radius:12px;font-size:10px;font-weight:600}
+.status-live{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.status-offline{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.status-loading{background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3)}
+#data-info{font-size:10px;color:var(--text-muted);max-width:180px;text-align:right;line-height:1.3}
+
+/* Globe */
+#globe-container{position:fixed;top:52px;left:0;right:var(--sidebar-w);bottom:0}
+#globeViz{width:100%;height:100%}
+
+/* Loading overlay */
+#loading-overlay{position:fixed;inset:0;background:var(--bg-primary);z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s}
+#loading-overlay.hidden{opacity:0;pointer-events:none}
+.load-logo{width:64px;height:64px;background:linear-gradient(135deg,var(--accent),#3b82f6);border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:32px;color:#fff;margin-bottom:20px}
+.load-title{font-size:18px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.load-sub{font-size:12px;color:var(--text-muted);margin-bottom:24px}
+.load-bar{width:200px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.load-bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s;width:10%}
+#load-status{font-size:11px;color:var(--text-secondary);margin-top:12px}
+
+/* Sidebar */
+#sidebar{position:fixed;top:52px;right:0;width:var(--sidebar-w);bottom:0;background:var(--bg-secondary);border-left:1px solid var(--border);overflow-y:auto;z-index:50;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:4px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-section{padding:14px;border-bottom:1px solid var(--border)}
+.sidebar-section h3{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+
+/* Risk cards */
+.risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.risk-card{background:var(--bg-card);border-radius:8px;padding:10px;border:1px solid var(--border);cursor:pointer;transition:all .2s}
+.risk-card:hover{border-color:var(--accent-dim)}
+.risk-card.active{border-color:var(--accent);background:var(--bg-card-hover)}
+.risk-card .risk-count{font-size:20px;font-weight:700}
+.risk-card .risk-label{font-size:9px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-top:2px}
+.risk-critical .risk-count{color:var(--critical)}.risk-critical .risk-label{color:var(--critical)}
+.risk-high .risk-count{color:var(--high)}.risk-high .risk-label{color:var(--high)}
+.risk-moderate .risk-count{color:var(--moderate)}.risk-moderate .risk-label{color:var(--moderate)}
+.risk-low .risk-count{color:var(--low)}.risk-low .risk-label{color:var(--low)}
+.risk-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px}
+
+/* Stats row */
+.stats-row{display:flex;justify-content:space-between;gap:6px;margin-top:8px}
+.stat-item{background:var(--bg-card);border-radius:6px;padding:7px 8px;flex:1;text-align:center;border:1px solid var(--border)}
+.stat-item .stat-val{font-size:15px;font-weight:700;color:var(--accent)}
+.stat-item .stat-lbl{font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+
+/* Charts */
+.chart-container{background:var(--bg-card);border-radius:8px;padding:10px;border:1px solid var(--border);margin-top:8px}
+.chart-container canvas{max-height:150px}
+
+/* Filters */
+.filter-group{margin-bottom:8px}
+.filter-group label{font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.filter-group select{width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);padding:5px 7px;border-radius:6px;font-size:11px}
+.filter-group select:focus{outline:none;border-color:var(--accent)}
+input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:var(--border)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:pointer}
+
+/* Tracker placeholder */
+.tracker-placeholder{background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(59,130,246,.08));border:1px dashed var(--accent-dim);border-radius:8px;padding:12px;text-align:center}
+.tracker-placeholder .tp-title{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:3px}
+.tracker-placeholder .tp-desc{font-size:9px;color:var(--text-muted);line-height:1.5}
+.tp-badge{display:inline-block;padding:2px 8px;background:rgba(6,182,212,.15);border-radius:10px;font-size:8px;font-weight:600;color:var(--accent);margin-top:5px;letter-spacing:.5px}
+
+/* Detail bar */
+#detail-bar{position:fixed;bottom:0;left:0;right:var(--sidebar-w);height:0;background:rgba(26,34,53,.96);backdrop-filter:blur(12px);border-top:1px solid var(--border);transition:height .3s;overflow:hidden;z-index:90}
+#detail-bar.open{height:110px}
+#detail-content{padding:12px 18px;display:flex;gap:20px;align-items:flex-start}
+.detail-main{flex:1}
+.detail-main .detail-name{font-size:15px;font-weight:700;margin-bottom:3px}
+.detail-main .detail-meta{font-size:11px;color:var(--text-secondary);display:flex;gap:14px;flex-wrap:wrap}
+.detail-main .detail-meta span{display:flex;align-items:center;gap:3px}
+.detail-scores{display:flex;gap:6px}
+.score-box{text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:60px}
+.score-box .sb-val{font-size:16px;font-weight:700}
+.score-box .sb-lbl{font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
+.detail-risk-badge{padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px}
+#detail-close{position:absolute;top:8px;right:14px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px}
+
+/* Modals */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:28px;width:520px;max-width:92vw;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:17px;margin-bottom:5px}
+.modal p{font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5}
+.settings-grid{display:grid;gap:10px}
+.settings-group{background:var(--bg-primary);border-radius:8px;padding:10px}
+.settings-group h4{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.settings-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.settings-row label{font-size:10px;color:var(--text-secondary)}
+.settings-row input{width:65px;padding:3px 5px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:11px;text-align:center}
+.settings-row input:focus{outline:none;border-color:var(--accent)}
+.modal .btn-primary{padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px}
+.modal .btn-primary:hover{background:#0891b2}
+
+/* Globe legend */
+#globe-legend{position:absolute;bottom:14px;left:14px;background:rgba(26,34,53,.88);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:8px;padding:9px 12px;z-index:80}
+#globe-legend .legend-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:5px}
+.legend-item{display:flex;align-items:center;gap:5px;margin-bottom:2px;font-size:10px;color:var(--text-secondary)}
+.legend-dot{width:9px;height:9px;border-radius:50%}
+
+/* Spinner */
+.spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Mobile sidebar toggle */
+#sidebar-toggle{display:none;position:fixed;bottom:16px;right:16px;z-index:95;width:44px;height:44px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:18px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+
+/* Responsive */
+@media(max-width:900px){
+  :root{--sidebar-w:0px}
+  #sidebar{transform:translateX(100%);width:340px}
+  #sidebar.open{transform:translateX(0)}
+  #sidebar-toggle{display:flex;align-items:center;justify-content:center}
+  #detail-bar{right:0}
+  #globe-container{right:0}
+  .header-actions{gap:4px}
+  #data-info{display:none}
+}
+@media(max-width:500px){
+  #header{padding:0 10px}
+  .logo-text{font-size:12px}
+  .btn{padding:4px 8px;font-size:10px}
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+  <div class="load-logo">C</div>
+  <div class="load-title">Cerulean Labs</div>
+  <div class="load-sub">Space Debris Risk Tracker</div>
+  <div class="load-bar"><div class="load-bar-fill" id="load-bar-fill"></div></div>
+  <div id="load-status">Initializing...</div>
+</div>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">
+    <div class="logo-icon">C</div>
+    <div>
+      <div class="logo-text">Cerulean Labs</div>
+      <div class="logo-sub">Space Debris Risk Tracker</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="status-badge" class="status-loading">LOADING</span>
+    <span id="data-info"></span>
+    <button class="btn" onclick="openSettings()">&#9881; Risk Config</button>
+    <label class="btn" style="cursor:pointer" title="Upload a newer SATCAT CSV to refresh data">&#128193; Update Data<input type="file" accept=".csv" style="display:none" onchange="handleCSVUpload(event)"></label>
+    <button class="btn" onclick="openAbout()">&#9432; About</button>
+  </div>
+</div>
+
+<!-- GLOBE -->
+<div id="globe-container">
+  <div id="globeViz"></div>
+  <div id="globe-legend">
+    <div class="legend-title">Risk Level</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Critical (8-10)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>High (6-7)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>Moderate (4-5)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Low (1-3)</div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="sidebar-section">
+    <h3>Risk Overview</h3>
+    <div class="risk-grid">
+      <div class="risk-card risk-critical active" onclick="toggleRiskFilter(this,'CRITICAL')">
+        <div class="risk-count" id="count-critical">&mdash;</div>
+        <div class="risk-label"><span class="risk-dot" style="background:var(--critical)"></span>Critical</div>
+      </div>
+      <div class="risk-card risk-high active" onclick="toggleRiskFilter(this,'HIGH')">
+        <div class="risk-count" id="count-high">&mdash;</div>
+        <div class="risk-label"><span class="risk-dot" style="background:var(--high)"></span>High</div>
+      </div>
+      <div class="risk-card risk-moderate active" onclick="toggleRiskFilter(this,'MODERATE')">
+        <div class="risk-count" id="count-moderate">&mdash;</div>
+        <div class="risk-label"><span class="risk-dot" style="background:var(--moderate)"></span>Moderate</div>
+      </div>
+      <div class="risk-card risk-low active" onclick="toggleRiskFilter(this,'LOW')">
+        <div class="risk-count" id="count-low">&mdash;</div>
+        <div class="risk-label"><span class="risk-dot" style="background:var(--low)"></span>Low</div>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-item"><div class="stat-val" id="stat-total">&mdash;</div><div class="stat-lbl">Total In-Orbit</div></div>
+      <div class="stat-item"><div class="stat-val" id="stat-leo">&mdash;</div><div class="stat-lbl">LEO (&lt;2000km)</div></div>
+      <div class="stat-item"><div class="stat-val" id="stat-events">&mdash;</div><div class="stat-lbl">ASAT/Collision</div></div>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>Altitude Density</h3>
+    <div class="chart-container"><canvas id="altChart"></canvas></div>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>Top Contributors</h3>
+    <div class="chart-container"><canvas id="countryChart"></canvas></div>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>Filters</h3>
+    <div class="filter-group">
+      <label>Country</label>
+      <select id="filter-country" onchange="applyFilters()"><option value="ALL">All Countries</option></select>
+    </div>
+    <div class="filter-group">
+      <label>Min Altitude (km): <span id="alt-min-val">0</span></label>
+      <input type="range" id="filter-alt-min" min="0" max="2000" value="0" step="50" oninput="document.getElementById('alt-min-val').textContent=this.value;debouncedFilter()">
+    </div>
+    <div class="filter-group">
+      <label>Max Altitude (km): <span id="alt-max-val">50000</span></label>
+      <input type="range" id="filter-alt-max" min="0" max="50000" value="50000" step="500" oninput="document.getElementById('alt-max-val').textContent=this.value;debouncedFilter()">
+    </div>
+    <div class="filter-group">
+      <label>Size</label>
+      <select id="filter-size" onchange="applyFilters()">
+        <option value="ALL">All Sizes</option>
+        <option value="LARGE">Large</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="SMALL">Small</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>Cerulean Tracker Feed</h3>
+    <div class="tracker-placeholder">
+      <div class="tp-title">Ion-Propulsion Trackers</div>
+      <div class="tp-desc">Real-time granular data from Cerulean Labs orbital sensors. Partnership with Dawn Aerospace HTHL platform.</div>
+      <div class="tp-badge">COMING SOON</div>
+    </div>
+  </div>
+
+  <div class="sidebar-section" style="text-align:center;padding:8px 14px">
+    <div style="font-size:8px;color:var(--text-muted)">Data: Space-Track.org (18th SDS) | Risk Model: Cerulean Labs v1.0</div>
+  </div>
+</div>
+
+<!-- SIDEBAR TOGGLE (mobile) -->
+<button id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<!-- DETAIL BAR -->
+<div id="detail-bar">
+  <button id="detail-close" onclick="closeDetail()">&times;</button>
+  <div id="detail-content"></div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <h2>Risk Scoring Configuration</h2>
+    <p>Adjust the scoring thresholds and weights. Changes apply immediately to all debris objects.</p>
+    <div class="settings-grid">
+      <div class="settings-group">
+        <h4>Altitude Risk (0-3)</h4>
+        <div class="settings-row"><label>Critical band low (km)</label><input type="number" id="cfg-alt-crit-lo" value="600"></div>
+        <div class="settings-row"><label>Critical band high (km)</label><input type="number" id="cfg-alt-crit-hi" value="1000"></div>
+        <div class="settings-row"><label>Critical score</label><input type="number" id="cfg-alt-crit-score" value="3"></div>
+        <div class="settings-row"><label>Elevated score</label><input type="number" id="cfg-alt-elev-score" value="2"></div>
+        <div class="settings-row"><label>Other score</label><input type="number" id="cfg-alt-other-score" value="1"></div>
+      </div>
+      <div class="settings-group">
+        <h4>Size Risk (0-3)</h4>
+        <div class="settings-row"><label>LARGE</label><input type="number" id="cfg-size-large" value="3"></div>
+        <div class="settings-row"><label>MEDIUM</label><input type="number" id="cfg-size-medium" value="2"></div>
+        <div class="settings-row"><label>SMALL</label><input type="number" id="cfg-size-small" value="1"></div>
+      </div>
+      <div class="settings-group">
+        <h4>Inclination Risk (0-2)</h4>
+        <div class="settings-row"><label>Sun-sync low</label><input type="number" id="cfg-inc-ss-lo" value="95"></div>
+        <div class="settings-row"><label>Sun-sync high</label><input type="number" id="cfg-inc-ss-hi" value="105"></div>
+        <div class="settings-row"><label>Sun-sync score</label><input type="number" id="cfg-inc-ss-score" value="2"></div>
+        <div class="settings-row"><label>Polar (60-85) score</label><input type="number" id="cfg-inc-polar-score" value="1"></div>
+      </div>
+      <div class="settings-group">
+        <h4>Longevity Risk (0-2)</h4>
+        <div class="settings-row"><label>High threshold (km)</label><input type="number" id="cfg-long-hi" value="800"></div>
+        <div class="settings-row"><label>High score</label><input type="number" id="cfg-long-hi-score" value="2"></div>
+        <div class="settings-row"><label>Med threshold (km)</label><input type="number" id="cfg-long-med" value="600"></div>
+        <div class="settings-row"><label>Med score</label><input type="number" id="cfg-long-med-score" value="1"></div>
+      </div>
+      <div class="settings-group">
+        <h4>Rating Thresholds</h4>
+        <div class="settings-row"><label>CRITICAL if total &ge;</label><input type="number" id="cfg-thresh-crit" value="8"></div>
+        <div class="settings-row"><label>HIGH if total &ge;</label><input type="number" id="cfg-thresh-high" value="6"></div>
+        <div class="settings-row"><label>MODERATE if total &ge;</label><input type="number" id="cfg-thresh-mod" value="4"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+      <button class="btn" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" onclick="applySettings()">Apply &amp; Re-Score</button>
+    </div>
+  </div>
+</div>
+
+<!-- ABOUT MODAL -->
+<div id="about-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:480px">
+    <h2>About This Tracker</h2>
+    <p style="margin-bottom:12px">The Cerulean Labs Space Debris Risk Tracker visualizes <strong>all tracked in-orbit debris</strong> from the US Space Surveillance Network (18th SDS), sourced via <a href="https://www.space-track.org" target="_blank" style="color:var(--accent)">Space-Track.org</a>.</p>
+    <div style="background:var(--bg-primary);border-radius:8px;padding:12px;margin-bottom:12px;font-size:11px;color:var(--text-secondary);line-height:1.6">
+      <strong style="color:var(--accent)">Risk Scoring Methodology (4 factors, 0-10 scale)</strong><br><br>
+      <strong>Altitude (0-3):</strong> Perigee 600-1000km = 3 (critical density zone), 400-600 or 1000-1500km = 2, other = 1<br>
+      <strong>Size (0-3):</strong> LARGE = 3, MEDIUM = 2, SMALL = 1 (based on radar cross-section)<br>
+      <strong>Inclination (0-2):</strong> 95-105&deg; (sun-synchronous) = 2, 60-85&deg; = 1, other = 0<br>
+      <strong>Longevity (0-2):</strong> Perigee &ge;800km = 2, &ge;600km = 1, other = 0<br><br>
+      <strong>Total &rarr;</strong> CRITICAL (&ge;8), HIGH (&ge;6), MODERATE (&ge;4), LOW (&ge;1)
+    </div>
+    <p style="font-size:10px;color:var(--text-muted);margin-bottom:12px">To update data: download a SATCAT debris CSV from Space-Track.org, then click "Update Data" in the header.</p>
+    <div style="text-align:right">
+      <button class="btn-primary" onclick="closeAbout()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ STATE ============
+let allDebris = [];
+let filteredDebris = [];
+let globe = null;
+let altChart = null, countryChart = null;
+let activeRisks = new Set(['CRITICAL','HIGH','MODERATE','LOW']);
+let dataVersion = '';
+let filterTimeout = null;
+
+let config = {
+  alt:{critLo:600,critHi:1000,critScore:3,elevScore:2,otherScore:1},
+  size:{large:3,medium:2,small:1},
+  inc:{ssLo:95,ssHi:105,ssScore:2,polarScore:1},
+  long:{hi:800,hiScore:2,med:600,medScore:1},
+  thresh:{crit:8,high:6,mod:4}
+};
+
+const RISK_COLORS = {CRITICAL:'#ef4444',HIGH:'#f97316',MODERATE:'#eab308',LOW:'#22c55e',Unknown:'#64748b'};
+const COUNTRY_NAMES = {CIS:'Russia/CIS',US:'United States',PRC:'China',FR:'France',IND:'India',JPN:'Japan',CHBZ:'China/Brazil',ESA:'ESA',ISS:'ISS',IT:'Italy',GER:'Germany',CA:'Canada'};
+
+// ============ LOADING ============
+function setLoadProgress(pct, msg) {
+  document.getElementById('load-bar-fill').style.width = pct + '%';
+  document.getElementById('load-status').textContent = msg;
+}
+
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+  setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 600);
+}
+
+// ============ RISK SCORING ============
+function scoreDebris(d) {
+  const p = d.PERIGEE || 0;
+  const inc = d.INCLINATION || 0;
+  const rcs = (d.RCS_SIZE || '').toUpperCase();
+
+  let altScore = config.alt.otherScore;
+  if (p >= config.alt.critLo && p <= config.alt.critHi) altScore = config.alt.critScore;
+  else if ((p >= 400 && p < config.alt.critLo) || (p > config.alt.critHi && p <= 1500)) altScore = config.alt.elevScore;
+
+  let sizeScore = 0;
+  if (rcs === 'LARGE') sizeScore = config.size.large;
+  else if (rcs === 'MEDIUM') sizeScore = config.size.medium;
+  else if (rcs === 'SMALL') sizeScore = config.size.small;
+
+  let inclScore = 0;
+  if (inc >= config.inc.ssLo && inc <= config.inc.ssHi) inclScore = config.inc.ssScore;
+  else if (inc >= 60 && inc <= 85) inclScore = config.inc.polarScore;
+
+  let longScore = 0;
+  if (p >= config.long.hi) longScore = config.long.hiScore;
+  else if (p >= config.long.med) longScore = config.long.medScore;
+
+  const total = altScore + sizeScore + inclScore + longScore;
+  let risk = 'Unknown';
+  if (total >= config.thresh.crit) risk = 'CRITICAL';
+  else if (total >= config.thresh.high) risk = 'HIGH';
+  else if (total >= config.thresh.mod) risk = 'MODERATE';
+  else if (total >= 1) risk = 'LOW';
+
+  d.altScore = altScore; d.sizeScore = sizeScore;
+  d.inclScore = inclScore; d.longScore = longScore;
+  d.totalScore = total; d.risk = risk;
+}
+
+function scoreAll() { allDebris.forEach(d => scoreDebris(d)); }
+
+// ============ ORBITAL POSITION ============
+function debrisPosition(d, t) {
+  const perigee = d.PERIGEE || 400, apogee = d.APOGEE || 400;
+  const inclination = (d.INCLINATION || 0) * Math.PI / 180;
+  const period = d.PERIOD || 90;
+  const sma = (perigee + apogee) / 2 + 6371;
+  const ecc = (apogee - perigee) / (apogee + perigee + 2 * 6371);
+  const norad = d.NORAD_CAT_ID || 0;
+  const raan = ((norad * 137.508) % 360) * Math.PI / 180;
+  const M0 = ((norad * 97.123) % 360) * Math.PI / 180;
+  const n = 2 * Math.PI / (period * 60);
+  const M = M0 + n * t;
+  const E = M + ecc * Math.sin(M);
+  const cosE = Math.cos(E), sinE = Math.sin(E);
+  const cosV = (cosE - ecc) / (1 - ecc * cosE);
+  const sinV = Math.sqrt(1 - ecc * ecc) * sinE / (1 - ecc * cosE);
+  const v = Math.atan2(sinV, cosV);
+  const r = sma * (1 - ecc * cosE);
+  const xO = r * Math.cos(v), yO = r * Math.sin(v);
+  const cI = Math.cos(inclination), sI = Math.sin(inclination);
+  const cO = Math.cos(raan), sO = Math.sin(raan);
+  const x = xO * cO - yO * cI * sO;
+  const y = xO * sO + yO * cI * cO;
+  const z = yO * sI;
+  const alt = Math.sqrt(x*x + y*y + z*z) - 6371;
+  return { lat: Math.asin(z / (alt + 6371)) * 180 / Math.PI, lng: Math.atan2(y, x) * 180 / Math.PI, alt: Math.max(alt, 0) };
+}
+
+// ============ DATA LOADING ============
+function hydrateJSON(raw) {
+  const fields = raw.fields;
+  dataVersion = raw.version || 'Unknown';
+  allDebris = raw.data.map(row => {
+    const obj = {};
+    fields.forEach((f, i) => { obj[f] = row[i]; });
+    return obj;
+  }).filter(d => (d.PERIGEE || 0) > 0 && (d.APOGEE || 0) > 0);
+}
+
+function finalizeData(label) {
+  scoreAll();
+  const t = Date.now() / 1000;
+  allDebris.forEach(d => {
+    const pos = debrisPosition(d, t);
+    d.lat = pos.lat; d.lng = pos.lng; d.displayAlt = pos.alt;
+  });
+  const badge = document.getElementById('status-badge');
+  badge.className = 'status-live';
+  badge.textContent = label;
+  document.getElementById('data-info').innerHTML = `Data: ${dataVersion}<br>${allDebris.length.toLocaleString()} objects`;
+  populateFilters();
+  applyFilters();
+}
+
+async function loadEmbeddedData() {
+  setLoadProgress(30, 'Fetching debris data...');
+  try {
+    const resp = await fetch('data/debris.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    setLoadProgress(60, 'Parsing data...');
+    const raw = await resp.json();
+    hydrateJSON(raw);
+    setLoadProgress(80, 'Computing orbital positions...');
+    finalizeData('EMBEDDED');
+    setLoadProgress(100, 'Ready!');
+    setTimeout(hideLoading, 400);
+  } catch (err) {
+    setLoadProgress(100, 'Data load failed — upload a CSV to begin');
+    document.getElementById('status-badge').className = 'status-offline';
+    document.getElementById('status-badge').textContent = 'NO DATA';
+    setTimeout(hideLoading, 1500);
+  }
+}
+
+// ============ CSV UPLOAD ============
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const badge = document.getElementById('status-badge');
+  badge.className = 'status-loading'; badge.textContent = 'PARSING...';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const rows = parseCSV(e.target.result);
+      if (rows.length < 2) throw new Error('CSV appears empty');
+      const headers = rows[0].map(h => h.trim().toUpperCase());
+      const idx = {};
+      ['INTLDES','NORAD_CAT_ID','SATNAME','OBJECT_NAME','COUNTRY','LAUNCH','PERIOD','INCLINATION','APOGEE','PERIGEE','RCS_SIZE','LAUNCH_YEAR','DECAY'].forEach(h => { idx[h] = headers.indexOf(h); });
+      const g = (row, k) => idx[k] >= 0 ? (row[idx[k]] || '').trim() : '';
+
+      allDebris = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 3) continue;
+        const decay = g(row, 'DECAY');
+        if (decay && decay !== '' && decay !== 'null') continue;
+        const perigee = parseFloat(g(row, 'PERIGEE')) || 0;
+        const apogee = parseFloat(g(row, 'APOGEE')) || 0;
+        if (perigee <= 0 || apogee <= 0) continue;
+        allDebris.push({
+          INTLDES: g(row,'INTLDES'), NORAD_CAT_ID: parseInt(g(row,'NORAD_CAT_ID')) || 0,
+          SATNAME: g(row,'SATNAME') || g(row,'OBJECT_NAME') || '', COUNTRY: g(row,'COUNTRY'),
+          LAUNCH: g(row,'LAUNCH'), PERIOD: parseFloat(g(row,'PERIOD')) || 0,
+          INCLINATION: parseFloat(g(row,'INCLINATION')) || 0, APOGEE: apogee, PERIGEE: perigee,
+          RCS_SIZE: g(row,'RCS_SIZE'), LAUNCH_YEAR: parseInt(g(row,'LAUNCH_YEAR')) || 0
+        });
+      }
+      if (allDebris.length === 0) throw new Error('No valid in-orbit debris found');
+      dataVersion = new Date().toISOString().split('T')[0];
+      finalizeData('CSV');
+    } catch (err) {
+      badge.className = 'status-offline'; badge.textContent = 'ERROR';
+      alert('CSV parsing failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function parseCSV(text) {
+  const rows = []; let current = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (i+1 < text.length && text[i+1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { current.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && i+1 < text.length && text[i+1] === '\n') i++;
+        current.push(field); field = '';
+        if (current.length > 1 || current[0] !== '') rows.push(current);
+        current = [];
+      } else field += c;
+    }
+  }
+  if (field || current.length > 0) { current.push(field); rows.push(current); }
+  return rows;
+}
+
+// ============ GLOBE ============
+function initGlobe() {
+  try {
+    globe = Globe()
+      .globeImageUrl('https://unpkg.com/three-globe@2.33.0/example/img/earth-night.jpg')
+      .bumpImageUrl('https://unpkg.com/three-globe@2.33.0/example/img/earth-topology.png')
+      .backgroundImageUrl('https://unpkg.com/three-globe@2.33.0/example/img/night-sky.png')
+      .showAtmosphere(true)
+      .atmosphereColor('#06b6d4')
+      .atmosphereAltitude(0.15)
+      .pointsData([])
+      .pointLat('lat').pointLng('lng')
+      .pointAltitude(d => Math.min(d.displayAlt / 40000, 0.6))
+      .pointRadius(d => d.RCS_SIZE === 'LARGE' ? 0.22 : d.RCS_SIZE === 'MEDIUM' ? 0.13 : 0.07)
+      .pointColor(d => RISK_COLORS[d.risk] || '#64748b')
+      .pointLabel(d => `<div style="background:rgba(10,14,23,.92);border:1px solid #2a3550;border-radius:8px;padding:9px 12px;font-family:Inter,system-ui,sans-serif;min-width:190px"><div style="font-weight:700;font-size:12px;margin-bottom:3px">${d.SATNAME}</div><div style="font-size:10px;color:#94a3b8">NORAD ${d.NORAD_CAT_ID} &middot; ${COUNTRY_NAMES[d.COUNTRY]||d.COUNTRY}<br>Perigee: ${d.PERIGEE}km &middot; Apogee: ${d.APOGEE}km<br>Inc: ${d.INCLINATION}&deg; &middot; Size: ${d.RCS_SIZE||'?'}</div><div style="margin-top:5px;padding:2px 7px;border-radius:4px;display:inline-block;font-size:9px;font-weight:700;color:#fff;background:${RISK_COLORS[d.risk]}">${d.risk} (${d.totalScore}/10)</div></div>`)
+      .onPointClick(d => showDetail(d))
+      (document.getElementById('globeViz'));
+
+    globe.controls().autoRotate = true;
+    globe.controls().autoRotateSpeed = 0.3;
+    globe.pointOfView({lat:20,lng:0,altitude:2.5});
+  } catch(err) {
+    console.error('Globe init failed:', err);
+    document.getElementById('globe-container').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px">3D Globe could not load. Try refreshing.</div>';
+  }
+}
+
+function updateGlobe() { if (globe) globe.pointsData(filteredDebris); }
+
+// ============ CHARTS ============
+function initCharts() {
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.borderColor = '#2a3550';
+  Chart.defaults.font.family = 'Inter,system-ui,sans-serif';
+  Chart.defaults.font.size = 9;
+
+  altChart = new Chart(document.getElementById('altChart').getContext('2d'), {
+    type:'bar',
+    data:{labels:[],datasets:[{data:[],backgroundColor:'#06b6d4',borderRadius:2,barThickness:12}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:8}}},y:{grid:{color:'#1a2235'},ticks:{maxTicksLimit:5}}}}
+  });
+  countryChart = new Chart(document.getElementById('countryChart').getContext('2d'), {
+    type:'doughnut',
+    data:{labels:[],datasets:[{data:[],backgroundColor:['#ef4444','#3b82f6','#f97316','#8b5cf6','#22c55e','#eab308','#06b6d4','#64748b'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:9,padding:5,font:{size:9}}}},cutout:'60%'}
+  });
+}
+
+function updateCharts() {
+  const bins = Array(20).fill(0), labels = [];
+  for (let i = 0; i < 20; i++) {
+    const lo = i*100, hi = (i+1)*100;
+    labels.push(lo+'-'+hi);
+    filteredDebris.forEach(d => { if (d.PERIGEE >= lo && d.PERIGEE < hi) bins[i]++; });
+  }
+  altChart.data.labels = labels;
+  altChart.data.datasets[0].data = bins;
+  altChart.data.datasets[0].backgroundColor = bins.map((_,i) => {
+    const lo = i*100; return (lo >= 600 && lo < 1000) ? '#ef4444' : (lo >= 400 && lo < 600) ? '#f97316' : '#06b6d4';
+  });
+  altChart.update('none');
+
+  const cc = {};
+  filteredDebris.forEach(d => { cc[d.COUNTRY] = (cc[d.COUNTRY]||0)+1; });
+  const sorted = Object.entries(cc).sort((a,b) => b[1]-a[1]).slice(0,8);
+  countryChart.data.labels = sorted.map(([c]) => COUNTRY_NAMES[c]||c);
+  countryChart.data.datasets[0].data = sorted.map(([,v]) => v);
+  countryChart.update('none');
+}
+
+// ============ FILTERS ============
+function populateFilters() {
+  const sel = document.getElementById('filter-country');
+  sel.innerHTML = '<option value="ALL">All Countries</option>';
+  const cc = {};
+  allDebris.forEach(d => { cc[d.COUNTRY] = (cc[d.COUNTRY]||0)+1; });
+  Object.entries(cc).sort((a,b) => b[1]-a[1]).forEach(([c,n]) => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = `${COUNTRY_NAMES[c]||c} (${n.toLocaleString()})`;
+    sel.appendChild(opt);
+  });
+}
+
+function toggleRiskFilter(el, risk) {
+  el.classList.toggle('active');
+  activeRisks.has(risk) ? activeRisks.delete(risk) : activeRisks.add(risk);
+  applyFilters();
+}
+
+function debouncedFilter() { clearTimeout(filterTimeout); filterTimeout = setTimeout(applyFilters, 150); }
+
+function applyFilters() {
+  const country = document.getElementById('filter-country').value;
+  const altMin = parseInt(document.getElementById('filter-alt-min').value);
+  const altMax = parseInt(document.getElementById('filter-alt-max').value);
+  const size = document.getElementById('filter-size').value;
+
+  filteredDebris = allDebris.filter(d =>
+    activeRisks.has(d.risk) &&
+    (country === 'ALL' || d.COUNTRY === country) &&
+    d.PERIGEE >= altMin && d.PERIGEE <= altMax &&
+    (size === 'ALL' || d.RCS_SIZE === size)
+  );
+  updateStats(); updateGlobe(); updateCharts();
+}
+
+function updateStats() {
+  const risks = {CRITICAL:0,HIGH:0,MODERATE:0,LOW:0};
+  filteredDebris.forEach(d => { if (risks.hasOwnProperty(d.risk)) risks[d.risk]++; });
+  document.getElementById('count-critical').textContent = risks.CRITICAL.toLocaleString();
+  document.getElementById('count-high').textContent = risks.HIGH.toLocaleString();
+  document.getElementById('count-moderate').textContent = risks.MODERATE.toLocaleString();
+  document.getElementById('count-low').textContent = risks.LOW.toLocaleString();
+  document.getElementById('stat-total').textContent = filteredDebris.length.toLocaleString();
+  document.getElementById('stat-leo').textContent = filteredDebris.filter(d => d.APOGEE < 2000).length.toLocaleString();
+  const events = filteredDebris.filter(d => {
+    const id = d.INTLDES || '';
+    return id.startsWith('1999-025') || id.startsWith('1993-036') || id.startsWith('1997-051') || id.startsWith('1982-092');
+  }).length;
+  document.getElementById('stat-events').textContent = events.toLocaleString();
+}
+
+// ============ DETAIL PANEL ============
+function showDetail(d) {
+  const rc = RISK_COLORS[d.risk] || '#64748b';
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-main">
+      <div class="detail-name">${d.SATNAME} <span class="detail-risk-badge" style="background:${rc};color:#fff;margin-left:6px">${d.risk}</span></div>
+      <div class="detail-meta">
+        <span>NORAD ${d.NORAD_CAT_ID}</span><span>${d.INTLDES}</span>
+        <span>${COUNTRY_NAMES[d.COUNTRY]||d.COUNTRY}</span><span>Launched ${d.LAUNCH||'?'}</span>
+        <span>Perigee ${d.PERIGEE}km</span><span>Apogee ${d.APOGEE}km</span>
+        <span>Inc ${d.INCLINATION}&deg;</span><span>Size: ${d.RCS_SIZE||'?'}</span>
+      </div>
+    </div>
+    <div class="detail-scores">
+      <div class="score-box"><div class="sb-val" style="color:${rc}">${d.totalScore}</div><div class="sb-lbl">Total</div></div>
+      <div class="score-box"><div class="sb-val">${d.altScore}</div><div class="sb-lbl">Alt</div></div>
+      <div class="score-box"><div class="sb-val">${d.sizeScore}</div><div class="sb-lbl">Size</div></div>
+      <div class="score-box"><div class="sb-val">${d.inclScore}</div><div class="sb-lbl">Incl</div></div>
+      <div class="score-box"><div class="sb-val">${d.longScore}</div><div class="sb-lbl">Long</div></div>
+    </div>`;
+  document.getElementById('detail-bar').classList.add('open');
+  if (globe) globe.controls().autoRotate = false;
+}
+
+function closeDetail() {
+  document.getElementById('detail-bar').classList.remove('open');
+  if (globe) globe.controls().autoRotate = true;
+}
+
+// ============ MODALS ============
+function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; }
+function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+function openAbout() { document.getElementById('about-modal').style.display = 'flex'; }
+function closeAbout() { document.getElementById('about-modal').style.display = 'none'; }
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+function applySettings() {
+  config.alt.critLo = +document.getElementById('cfg-alt-crit-lo').value;
+  config.alt.critHi = +document.getElementById('cfg-alt-crit-hi').value;
+  config.alt.critScore = +document.getElementById('cfg-alt-crit-score').value;
+  config.alt.elevScore = +document.getElementById('cfg-alt-elev-score').value;
+  config.alt.otherScore = +document.getElementById('cfg-alt-other-score').value;
+  config.size.large = +document.getElementById('cfg-size-large').value;
+  config.size.medium = +document.getElementById('cfg-size-medium').value;
+  config.size.small = +document.getElementById('cfg-size-small').value;
+  config.inc.ssLo = +document.getElementById('cfg-inc-ss-lo').value;
+  config.inc.ssHi = +document.getElementById('cfg-inc-ss-hi').value;
+  config.inc.ssScore = +document.getElementById('cfg-inc-ss-score').value;
+  config.inc.polarScore = +document.getElementById('cfg-inc-polar-score').value;
+  config.long.hi = +document.getElementById('cfg-long-hi').value;
+  config.long.hiScore = +document.getElementById('cfg-long-hi-score').value;
+  config.long.med = +document.getElementById('cfg-long-med').value;
+  config.long.medScore = +document.getElementById('cfg-long-med-score').value;
+  config.thresh.crit = +document.getElementById('cfg-thresh-crit').value;
+  config.thresh.high = +document.getElementById('cfg-thresh-high').value;
+  config.thresh.mod = +document.getElementById('cfg-thresh-mod').value;
+  scoreAll(); applyFilters(); closeSettings();
+}
+
+// Close modals on overlay click
+document.addEventListener('click', e => {
+  if (e.target.id === 'settings-modal') closeSettings();
+  if (e.target.id === 'about-modal') closeAbout();
+});
+
+// ============ INIT ============
+document.addEventListener('DOMContentLoaded', () => {
+  setLoadProgress(10, 'Initializing globe...');
+  initGlobe();
+  initCharts();
+  setLoadProgress(20, 'Globe ready');
+  loadEmbeddedData();
+});
+</script>
+</body>
+</html>
